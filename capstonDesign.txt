@@ -1,0 +1,928 @@
+#include "io8535.h"
+#define RED PORTC_Bit4  //빨강
+#define GREEN PORTC_Bit5 //녹색
+#define LATCH PORTC_Bit6  // 래치
+#define CLOCK PORTC_Bit7 // 클럭
+#define INT0 GIMSK_Bit6  //인터럽트 0
+#define INT1 GIMSK_Bit7  //인터럽트 1
+#define TOIE0 TIMSK_Bit0 //타이머
+#define I SREG_Bit7 //인터럽트
+#define X5 PIND_Bit1 //비상 정지
+#define X6 PIND_Bit2 //문 열림 
+#define OCIE1A TIMSK_Bit4//타이머
+
+
+__flash unsigned long OPCL[2][16] ={{0xf000000f,0xf000000f,0x3000000c,0x3000000c,
+                                  0x3000000c, 0x3000000c, 0x3000000c, 0x3000000c,
+                                  0x3000000c, 0x3000000c, 0x3000000c, 0x3000000c,
+                                  0x3000000c, 0x3000000c, 0xf000000f, 0xf000000f},
+                                  {0xffffffff,0xffffffff,0x0003c000,0x0003c000,
+                                  0x0003c000, 0x0003c000, 0x0003c000, 0x0003c000,
+                                  0x0003c000, 0x0003c000, 0x0003c000, 0x0003c000,
+                                  0x0003c000, 0x0003c000, 0xffffffff, 0xffffffff}};
+
+unsigned long FONT_SAVE[16];
+
+
+__flash unsigned char KCODE[16] = {0x00,0x04,0x08,0x0C,0x01,0x05,0x09,0x0d,
+                                    0x02,0x06,0x0a,0x0e,0x03,0x07,0x0b,0x0f};// 0~F까지 키입력 가능하도록 배열 선언
+
+__flash unsigned long HELP[16]= {0x00000000, 0x00000000, 0x7e067e66, 0x7e067e66, 0x66060666, 0x66060666, 0x7e060666, 0x7e067e7e,
+0x06067e7e, 0x06060666, 0x06060666, 0x06060666, 0x067e7e66, 0x067e7e66, 0x00000000, 0x00000000};
+
+__flash unsigned long FONT[15][16]= { {0x00000000,0x00000000,0x00018000,0x00018000,
+                                0x00018000,0x00018000,0x00018000,0x00018000,
+                                0x00018000,0x00018000,0x00018000,0x00018000,
+                                0x00018000,0x00018000,0x00000000,0x00000000},
+                                {0x00000000,0x00000000,0x000ff000,0x000ff000,
+                                0x000c0000,0x000c0000,0x000c0000,0x000ff000,
+                                0x000ff000,0x00003000,0x00003000,0x00003000,
+                                0x000ff000,0x000ff000,0x00000000,0x00000000},
+                                {0x00000000,0x00000000,0x000ff000,0x000ff000,
+                                0x000c0000,0x000c0000,0x000c0000,0x000ff000,
+                                0x000ff000,0x000c0000,0x000c0000,0x000c0000,
+                                0x000ff000,0x000ff000,0x00000000,0x00000000},
+                                {0x00000000,0x00000000,0x00003000,0x00003000,
+                                0x00003000,0x00033000,0x00033000,0x00033000,
+                                0x00033000,0x000ff000,0x000ff000,0x00030000,
+                                0x00030000,0x00030000,0x00000000,0x00000000},
+                                {0x00000000,0x00000000,0x000ff000,0x000ff000,
+                                0x00003000,0x00003000,0x00003000,0x000ff000,
+                                0x000ff000,0x000c0000,0x000c0000,0x000c0000,
+                                0x000ff000,0x000ff000,0x00000000,0x00000000},
+                                {0x00000000, 0x00000000, 0x000ff000, 0x000ff000,
+                                 0x00003000, 0x00003000, 0x00003000, 0x000ff000,
+                                0x000ff000, 0x000c3000, 0x000c3000, 0x000c3000,
+                                0x000ff000, 0x000ff000, 0x00000000, 0x00000000},
+                                {0x00000000, 0x00000000, 0x000ff000, 0x000ff000,
+                                 0x000c3000, 0x000c3000, 0x000c3000, 0x000c0000,
+                                0x000c0000, 0x000c0000, 0x000c0000, 0x000c0000,
+                                0x000c0000, 0x000c0000, 0x00000000, 0x00000000},
+                                {0x00000000, 0x00000000, 0x000ff000, 0x000ff000,
+                                 0x000c3000, 0x000c3000, 0x000c3000, 0x000ff000,
+                                0x000ff000, 0x000c3000, 0x000c3000, 0x000c3000,
+                                0x000ff000, 0x000ff000, 0x00000000, 0x00000000},
+                                {0x00000000, 0x00000000, 0x000ff000, 0x000ff000,
+                                 0x000c3000, 0x000c3000, 0x000c3000, 0x000ff000,
+                                0x000ff000, 0x000c0000, 0x000c0000, 0x000c0000,
+                                 0x000ff000, 0x000ff000, 0x00000000, 0x00000000},
+                                 {0x00000000, 0x00000000, 0x003f1800, 0x003f1800,
+                                  0x00331800, 0x00331800, 0x00331800, 0x00331800,
+                                  0x00331800, 0x00331800, 0x00331800, 0x00331800, 
+                                  0x003f1800, 0x003f1800, 0x00000000, 0x00000000},
+                                  {0x00000000, 0x00000000, 0x00181800, 0x00181800,
+                                   0x00181800, 0x00181800, 0x00181800, 0x00181800,
+                                   0x00181800, 0x00181800, 0x00181800, 0x00181800, 
+                                   0x00181800, 0x00181800, 0x00000000, 0x00000000},
+                                  {0x00000000, 0x00000000, 0x00ff1800, 0x00ff1800,
+                                    0x00c01800, 0x00c01800, 0x00c01800, 0x00ff1800,
+                                    0x00ff1800, 0x00031800, 0x00031800, 0x00031800, 
+                                    0x00ff1800, 0x00ff1800, 0x00000000, 0x00000000},
+                                    {0x00000000, 0x00000000, 0x00ff1800, 0x00ff1800, 
+                                      0x00c01800, 0x00c01800, 0x00c01800, 0x00ff1800,
+                                      0x00ff1800, 0x00c01800, 0x00c01800, 0x00c01800, 
+                                      0x00ff1800, 0x00ff1800, 0x00000000, 0x00000000},
+                                      {0x00000000, 0x00000000, 0x00031800, 0x00031800,
+                                        0x00031800, 0x00331800, 0x00331800, 0x00331800,
+                                        0x00331800, 0x00ff1800, 0x00ff1800, 0x00301800, 
+                                        0x00301800, 0x00301800, 0x00000000, 0x00000000},
+                                         {0x00000000, 0x00000000, 0x00ff1800, 0x00ff1800, 
+                                          0x00031800, 0x00031800, 0x00ff1800, 0x00ff1800,
+                                           0x00c01800, 0x00c01800, 0x00c01800, 0x00c01800, 
+                                            0x00ff1800, 0x00ff1800, 0x00000000, 0x00000000}
+                                 
+                                };    //1~12층 합친것
+
+
+
+                                
+unsigned char font_c;//폰트 카운터
+unsigned long font; //폰트 버퍼
+unsigned char k,i,j,addr,DTE;//DOT 변수
+unsigned int m,n,p;//for문 제어변수 
+unsigned char KEY, KEYS, a;//키메트릭스 변수
+int d = 0; //층수 컨트롤 변수
+unsigned char end =0;//led 컨트롤 변수
+unsigned int ring_count,s=0;
+unsigned char KEY2=0;//KEY값 저장 변수 
+unsigned char KEY3=0;//현재 눌린 층과의 비교변수
+
+
+void delay(unsigned long i)
+{
+    while(i--);
+}
+
+void Help()
+{
+
+   for(j = 0; j<200; j++)
+  {
+        font_c = 0;
+        for(addr=0; addr<16; addr++)
+            {
+                font=HELP[addr];
+                for(i=0; i<32; i++)
+                {
+                    if(font& 0x00000001)
+                    {
+                        RED=1; GREEN=0;//빨간 색
+                    }
+                    else
+                    {
+                        RED=0; GREEN=0;
+                    }
+                    CLOCK=1;
+                    CLOCK=0;
+                    font >>=1;
+                }
+                PORTC=(PORTC & 0Xf0) | addr;
+                LATCH=1;
+                LATCH=0;
+
+            }
+   }
+   
+}//헬프 출력 
+
+void ring()
+{
+	
+        TCCR1A=0x40;
+        OCIE1A = 1;
+        
+	do{
+            
+            OCR1AH=2437>>8;                             
+            OCR1AL=2437&0x00ff;                               
+            TCCR1B=0x09;
+              ring_count=768;                                                           
+            while(ring_count != 0);   
+                    
+           OCR1AH=2145>>8;                                                                 
+            OCR1AL=2145&0x00ff;
+             TCCR1B=0x09;
+            ring_count=864; 
+            while(ring_count != 0);
+            
+           
+            
+	   OCR1AH=1919>>8; 
+            OCR1AL=1919&0x00ff;
+             TCCR1B=0x09;
+           ring_count=960;
+            while(ring_count != 0);
+                     
+	
+	}while(0);
+}//도착 알림음 
+
+void stop()
+{
+    TCCR1B=0 ;
+    TCCR1A=0;
+    OCIE1A = 0;
+    
+    
+}
+
+void siren()
+{
+  
+  Help();
+  TCCR1A=0x40;
+  
+  OCIE1A = 1;
+  do{
+        
+             OCR1AH = 1800 >>8;
+            OCR1AL=1800&0x00ff;
+            TCCR1B=0x09;
+            ring_count=1024;
+            while(ring_count != 0);
+            
+            
+              OCR1AH=0xff;
+            OCR1AL=0xff;
+             TCCR1A=0;
+            ring_count=31;
+            while(ring_count!=0);
+            TCCR1A=0x04;
+            
+        }while(0);
+}
+//사이렌 
+void set_OPCL(unsigned int a, unsigned int b )
+{
+    
+    DTE=a;
+    i=b;
+    for(j=0; j<16; j++)
+    {
+        FONT_SAVE[j]=OPCL[i][j];
+
+    }
+    for(k=0;k<DTE; k++)
+    {
+
+         for(j = 0; j<40; j++)
+            {
+          
+              font_c = 0; // 폰트 카운터 초기 설정
+          
+              for(addr=0; addr<16; addr++)  //어드레스 0 ~ 15까지 루프
+              {
+                  font = FONT_SAVE[addr]; //폰트 저장
+                  for(i=0; i <32; i++)
+                  {
+                      if(font & 0x00000001)
+                      {
+                        RED=1;GREEN=1;
+                      }
+                      else
+                      {
+                      RED=0; GREEN=0;
+                      }
+                //클럭 출력
+                      CLOCK = 1;
+                      CLOCK = 0;
+                      font >>=1;
+                  }
+                  PORTC = (PORTC & 0xf0) | addr;
+            //래치 출력
+                  LATCH = 1;
+                  LATCH = 0;
+            //행 점등 시간
+
+                  for(i =0; i<100; i++)
+                  {
+                      CLOCK = 1;
+                      CLOCK = 0;
+                  }
+              }
+          
+        }
+    }
+ }//문 열고 닫힘 
+    
+void Floor()
+{
+
+   for(j = 0; j<160; j++)
+  {
+      
+        font_c = 0;
+       
+        for(addr=0; addr<16; addr++)
+            {
+                font=FONT[d][addr];
+                for(i=0; i<32; i++)
+                {
+                    if(font& 0x00000001)
+                    {
+                        RED=1; GREEN=1;//노란색
+                    }
+                    else
+                    {
+                        RED=0; GREEN=0;
+                    }
+                    CLOCK=1;
+                    CLOCK=0;
+                    font >>=1;
+                    
+                }
+                PORTC=(PORTC & 0Xf0) | addr;
+                LATCH=1;
+                LATCH=0;
+            }
+   }
+}
+
+
+void SCAN()
+{
+        unsigned char i,temp,a,b,key1;
+        KEY = key1 = 0;
+        
+            for( a=0; a<4; a++)
+          {
+             if(a==0)
+                {
+                 b= 0xfe;
+                 PORTB = b;
+                }
+                else
+                {
+                    b = (b<<1)|0x01;
+                    PORTB = b;
+                    KEY = KEY + (a*4);
+                }
+                asm ("nop");
+                asm ("nop");
+                temp = PINB;
+                temp = (temp >> 4)| 0xf0;
+                for(i=0; i<4; i++)
+                {
+                    if(!(temp & 0x01))
+                    {
+                        key1 = KEY; 
+                    }
+                    temp >>=1;
+                    KEY++;
+                }
+            KEY = key1 & 0x0f;
+          }
+}
+//key값 스캔 함수 
+void check_Floor(){
+  if(!X5)
+          {
+            do{
+                  siren();
+            }while(1);
+          } 
+  
+  if(end != d)
+        {
+          if(end < d)
+          {
+            PORTA = 0xfe;               
+          }
+          else if (end >d)
+          {
+           PORTA = 0xfd;        
+          }
+        }
+      else if(end == d)
+        {
+          PORTA = 0xff;
+        }
+}
+//올라가거나 내려갈때 LED동작 
+void Floorup(unsigned int a, unsigned int b)
+{
+ for(n=a; n<b; n++)
+  { 
+     
+    Floor();     
+     ++d;
+     check_Floor();
+   }
+    Floor();
+}//올라갈때 
+void Floordown(unsigned int a, unsigned int b)
+{
+ for(n=a; n>b; n--)
+  { 
+     Floor();
+     --d;     
+     check_Floor();
+  }
+  Floor();
+}//내려갈때 
+void check_upFloor(unsigned int s, unsigned int m,unsigned int e)
+{
+    Floorup(s,m);
+    ring();
+    stop();
+    set_OPCL(3,0);
+    set_OPCL(1,1);
+    Floorup(m,e);
+}// 도중에 KEY값 들어왔을 시 올라갈때 
+void check_downFloor(unsigned int s, unsigned int m,unsigned int e)
+{       
+    Floordown(s,m);
+    ring();
+    stop();
+    set_OPCL(3,0);
+    set_OPCL(1,1); 
+    Floordown(m,e);
+  
+}// 도중에 KEY값 들어왔을 시 내려 갈때 
+void FloorControl(unsigned int a, unsigned int b, unsigned int ud)//a=초기값 b= 끝값 ud=up(0)/down(1)선택
+{
+  KEYS = KEY2;  //초기 KEY값 저장 
+ 
+  if(ud==1)//내려갈때 
+  {
+      for(p=a; p>b; p--)
+      { 
+          SCAN();
+           if(KEY!=0&&KEY>0&&KEY<16)
+          KEY3=KCODE[KEY];
+          if(KEY!=0&&KEY>0&&KEY<16&&p+1>KEY3)
+          {
+            KEY2 = KCODE[KEY];
+          }//도중에 KEY가 들어왔을 때 KEY2에 KEY값 저장 
+   
+          if(KEYS != KEY2 && KEY2 >p)
+          {
+            check_downFloor(p,KEY2,KEYS);
+            KEY2=KEYS; //초기 KEY2값으로 변경해줌 
+            break;
+          }
+         
+          Floor();
+          --d;    
+          check_Floor();
+        }
+        Floor();
+  }
+ 
+  else if(ud==0)//올라갈 때 
+  {
+    for(p=a; p<b; p++)
+  { 
+    SCAN();
+    if(KEY!=0&&KEY>0&&KEY<16)
+    KEY3=KCODE[KEY];
+     if(KEY!=0&&KEY>0&&KEY<16&&p+1<KEY3)
+     {
+       KEY2 = KCODE[KEY];
+     }//도중에 KEY가 들어왔을 때 KEY2에 KEY값 저장
+   
+    if(KEYS != KEY2 && KEY2 <=b)
+    {
+        check_upFloor(p+1,KEY2,KEYS);
+        KEY2=KEYS;//초기 KEY2값으로 변경해줌 
+        break;
+     }
+   
+      Floor();
+    ++d;    
+    check_Floor();
+  }
+   Floor();
+    
+  }
+ 
+}
+   
+#pragma vector = INT0_vect
+__interrupt void EX_INT0()
+{
+    while(!X6)
+    {
+        delay(100);
+        set_OPCL(3,0);
+     }
+     set_OPCL(1,1);
+//스위치를 누르면 도어 6초 개방 *3
+ //눌럿을때 0 땟을때 1
+}//버튼누르면 6초동안 도어 오픈
+
+
+#pragma vector = TIMER1_COMPA_vect
+__interrupt void COMP_A()
+{
+    ring_count--;
+}
+int main(void)
+{
+    DDRB = 0x0f;
+    DDRD=0x30;
+    DDRC=0xff; // DOT 출력
+    DDRA=0xff;
+    PORTC =0; //폰트 출력 OFF
+    PORTA=0xff; // LED출력 
+    PORTD=0xcf;
+    MCUCR=0x0a;//상승모서리에서 인터럽트 발생
+    I=1;//인터럽트 받을상태
+    INT0=1;
+    OCIE1A = 1;
+    TCCR1A=0x40;
+    TCNT1H=0;
+    TCNT1L=0;
+   
+    goto a;
+    b :  ring();
+          stop();
+      set_OPCL(3,0); //문 열림
+        set_OPCL(1,1);//문 닫힘 
+      
+a :
+    do
+ {
+      
+      if(d == 0)
+         {
+              SCAN();
+              KEY2 = KCODE[KEY];
+              Floor();
+              end=d;
+              check_Floor();
+         }  // 키 입력이 없으면 1층에서 멈춤
+       
+       else if(d<0&&d>14)
+       {
+         do{
+           PORTA=0x00;
+         }while(1);
+       }//d값에 오류가 나면 LED 전부 켜짐
+        
+        while(KEY2==0)
+       {
+         SCAN();
+         if(KEY!=0 )
+           KEY2=KCODE[KEY];
+          else
+          {
+              Floor();
+              end = d;
+              check_Floor();
+          }
+       }
+             if( KEY2 == 1)
+            {
+               if(d < 15&& d>0) //15~2층에서 내려올때
+                {
+                    FloorControl(d,0,1);
+                    goto b;
+                }
+                  
+               while(KEY2==1)//KEY2가 1 일 때 KEY2값이 바뀌지 않으면 계속 1층 출력 
+               { 
+                      SCAN();
+                      if(KEY!=0 )
+                      KEY2=KCODE[KEY];
+                      else 
+                      {
+                            Floor();
+                            end = d;
+                            check_Floor();
+                      }
+               }
+            }
+            else if( KEY2== 2)
+             {
+                if(d == 0)  //1층에서 올라갈때
+                {
+                    FloorControl(d,1,0);
+                     goto b;
+                }
+                else if(d>1 ) //3층에서 내려올때
+                {
+                   FloorControl(d,1,1);
+                   goto b;
+                }
+                while(KEY2==2)
+                     {
+                       SCAN();
+                      if(KEY!=0)
+                      KEY2=KCODE[KEY];
+                      else 
+                      {
+                          Floor();
+                          end = d;
+                          check_Floor();
+                        }
+                     }
+             }
+              else if(KEY2==3)
+            {
+                if(d <2) //1층에서 올라올때
+                {
+                  
+                  FloorControl(d,2,0);
+                 goto b;
+                }
+                else if(d>2)
+                {
+               FloorControl(d,2,1);
+               goto b;
+                }
+                while(KEY2==3)
+                     {
+                       SCAN();
+                       if(KEY!=0)
+                      KEY2=KCODE[KEY];
+                        else 
+                        {
+                          Floor();
+                          end = d;
+                          check_Floor();
+                        }
+                     }
+            }
+         else if(KEY2==4)
+            {
+              if(d<3)
+                {
+                    FloorControl(d,3,0);
+                     goto b;
+                  }
+                  if(d>3)
+                 {
+                    
+                    FloorControl(d,3,1);
+                    goto b;
+                  }
+		      while(KEY2==4)
+                     {
+                       SCAN();
+                          if(KEY!=0)
+                        KEY2=KCODE[KEY];
+                        else 
+                        {
+                            Floor();
+                            end = d;
+                            check_Floor();
+                         }
+                }
+            }
+            else if(KEY2==5)
+            {
+		if(d<4)
+                {
+                    FloorControl(d,4,0);
+                     goto b;
+                  }
+                 else if(d>4)
+                 {
+                         FloorControl(d,4,1);
+                            goto b;
+                 }
+                
+                while(KEY2==5)
+                 {
+                   SCAN();
+                       if(KEY!=0)
+                      KEY2=KCODE[KEY];
+                      else 
+                      {
+                            Floor();
+                            end = d;
+                            check_Floor();
+                      }
+		}
+            }
+                else if(KEY2==6)
+                 {
+                      if(d <5) //1층에서 올라올때
+                      {
+                           FloorControl(d,5,0);
+                           goto b;
+                       }
+                       else if(d>5)
+                       {
+                      FloorControl(d,5,1);
+                       goto b;
+                       }
+                      
+                      while(KEY2==6)
+                     {
+                       SCAN();
+                        if(KEY!=0)
+                      KEY2=KCODE[KEY];
+                      else 
+                      {
+                        Floor();
+                      end = d;
+                      check_Floor();
+                      } 
+                     }
+                }
+              else if(KEY2==7)
+                 {
+                      if(d <6) //1층에서 올라올때
+                      {
+                           FloorControl(d,6,0);
+                           goto b;
+                       }
+                       else if(d>6)
+                       {
+                        FloorControl(d,6,1);
+                        goto b;
+                       }
+                      
+                      while(KEY2==7)
+                     {
+                       SCAN();
+                        if(KEY!=0)
+                        KEY2=KCODE[KEY];
+                      else 
+                      {
+                        Floor();
+                        end = d;
+                        check_Floor();
+                      }
+                     }
+                }
+             
+                else if(KEY2==8)
+                 {
+                      if(d <7) //1층에서 올라올때
+                      {
+                           FloorControl(d,7,0);
+                           goto b;
+                       }
+                       else if(d>7)
+                       {
+                          FloorControl(d,7,1);
+                          goto b;
+                       }
+                      while(KEY2==8)
+                     {
+                       SCAN();
+                          if(KEY!=0)
+                          KEY2=KCODE[KEY];
+                          else 
+                         {
+                           
+                            Floor();
+                            end = d;
+                            check_Floor();
+                         }
+                     }
+                }
+         else if(KEY2==9)
+                 {
+                      if(d <8) //1층에서 올라올때
+                      {
+                           FloorControl(d,8,0);
+                           goto b;
+                       }
+                       else if(d>8)
+                       {
+                      FloorControl(d,8,1);
+                       goto b;
+                       }
+              
+                      while(KEY2==9)
+                     {
+                       SCAN();
+                        if(KEY!=0)
+                         KEY2=KCODE[KEY];
+                        else 
+                        {
+                            Floor();
+                             end = d;
+                            check_Floor();
+                         } 
+                     }
+                }
+              else if(KEY2==10)
+                 {
+                      if(d <9) //1층에서 올라올때
+                      {
+                           FloorControl(d,9,0);
+                           goto b;
+                       }
+                       else if(d>9)
+                       {
+                      FloorControl(d,9,1);
+                       goto b;
+                       }
+              
+                      while(KEY2==10)
+                     {
+                       SCAN();
+                        if(KEY!=0)
+                        KEY2=KCODE[KEY];
+                        else 
+                        {
+                            Floor();
+                            end = d;
+                            check_Floor();
+                        }
+                     }
+                }
+             
+                else if(KEY2==11)
+                 {
+                      if(d <10) //1층에서 올라올때
+                      {
+                           FloorControl(d,10,0);
+                           goto b;
+                       }
+                       else if(d>10)
+                       {
+                      FloorControl(d,10,1);
+                       goto b;
+                       }
+              
+                      while(KEY2==11)
+                     {
+                       SCAN();
+                        if(KEY!=0)
+                        KEY2=KCODE[KEY];
+                        else 
+                        {
+                            Floor();
+                            end = d;
+                            check_Floor();
+                         }
+                     }
+                }
+         else if(KEY2==12)
+                 {
+                      if(d <11) //1층에서 올라올때
+                      {
+                           FloorControl(d,11,0);
+                           goto b;
+                       }
+                       else if(d>11)
+                       {
+                      FloorControl(d,11,1);
+                       goto b;
+                       }
+              
+                      while(KEY2==12)
+                     {
+                       SCAN();
+                        if(KEY!=0)
+                        KEY2=KCODE[KEY];
+                        else 
+                        {
+                          Floor();
+                          end = d;
+                          check_Floor();
+                        }
+                           
+                     }
+                }
+               else if(KEY2==13)
+                 {
+                      if(d <12) //1층에서 올라올때
+                      {
+                           FloorControl(d,12,0);
+                           goto b;
+                       }
+                       else if(d>12)
+                       {
+                      FloorControl(d,12,1);
+                       goto b;
+                       }
+              
+                      while(KEY2==13)
+                     {
+                       SCAN();
+                        if(KEY!=0)
+                        KEY2=KCODE[KEY];
+                        else 
+                        {
+                          Floor();
+                          end = d;
+                          check_Floor();
+                        }
+                           
+                     }
+                }
+             
+                else if(KEY2==14)
+                 {
+                      if(d <13) //1층에서 올라올때
+                      {
+                           FloorControl(d,13,0);
+                           goto b;
+                       }
+                       else if(d>13)
+                       {
+                      FloorControl(d,13,1);
+                       goto b;
+                       }
+              
+                      while(KEY2==14)
+                     {
+                       SCAN();
+                        if(KEY!=0)
+                        KEY2=KCODE[KEY];
+                        else 
+                        {
+                          Floor();
+                          end = d;
+                          check_Floor();
+                        }
+                           
+                     }
+                }
+                else if(KEY2==15)
+                 {
+                      if(d <14) //1층에서 올라올때
+                      {
+                           FloorControl(d,14,0);
+                           goto b;
+                       }
+                       else if(d>14)
+                       {
+                      FloorControl(d,14,1);
+                       goto b;
+                       }
+              
+                      while(KEY2==15)
+                     {
+                       SCAN();
+                        if(KEY!=0)
+                        KEY2=KCODE[KEY];
+                        else 
+                        {
+                          Floor();
+                          end = d;
+                          check_Floor();
+                        }
+                           
+                     }
+                }
+    }while(1);
+}
+
